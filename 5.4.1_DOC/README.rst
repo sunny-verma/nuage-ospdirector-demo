@@ -221,6 +221,7 @@ OSC and VRS Packages
     * Nuage-openstack-horizon
     * Nuage-openstack-neutron
     * Nuage-openstack-neutronclient
+    * nuage-ironic-inspector (required for Ironic Inspector Integration)
     * nuage-openvswitch (VRS)
     * nuage-puppet-modules (Latest version 5.0)
     * Nuage-topology-collector
@@ -664,7 +665,46 @@ In OSPD 13 and later, /usr/share/openstack-tripleo-heat-templates/environments/n
 .. Note:: ExternalInterfaceDefaultRoute IP should be able to reach outside because the Overcloud Controller uses this IP address as a default route to reach the Red Hat Registry to pull the Overcloud container images.
 
 
-6. Please follow **Phase 6** steps again for verfication of all the nodes are assigned with correct flavors.
+6. **(Optional)** To enable Ironic, perform the following instructions:
+
+:Step 1:  If deploying OpenStack Bare Metal (ironic) in your overcloud, you need to include the /usr/share/openstack-tripleo-heat-templates/environments/services-docker/ironic.yaml environment file so the director can prepare the images. When following **Phase 8 Step 4** please include below environment. The following snippet is an example on how to include this environment file:
+
+::
+
+    openstack overcloud container image prepare \
+      ...
+      -e /usr/share/openstack-tripleo-heat-templates/environments/services-docker/ironic.yaml \
+      ...
+
+:Step 2: To deploy the Overcloud, additional parameters and template files are required.
+
+    * Include the following parameter values in the heat template neutron-nuage-config.yaml:
+
+::
+
+    NeutronMechanismDrivers: ['nuage','nuage_baremetal']
+
+:Step 3: **(Only required for Ironic Inspector Integration)**
+
+    * Create a separate roles file. Below example shows how to create a roles file for Controller and Compute roles:
+
+    ::
+
+        openstack overcloud roles generate Controller Compute -o /home/stack/templates/ironic-role.yaml
+
+
+    * Manually add **OS::TripleO::Services::IronicInspector** to Controller role like shown below:
+
+    ::
+
+        ...
+        - OS::TripleO::Services::IronicConductor
+        - OS::TripleO::Services::IronicInspector
+        - OS::TripleO::Services::IronicPxe
+        ...
+
+
+7. Please follow **Phase 6** steps again for verfication of all the nodes are assigned with correct flavors.
 
 
 
@@ -712,7 +752,17 @@ Phase 8: Build the Docker images.
 
 
 
-7. For all the Docker files in the Nuage-OSPD-Dockerfiles directory, change the ``<tag>`` of the Docker base image to point to the same release in ``/home/stack/templates/overcloud_images.yaml`` .
+7. **(Optional)** For Ironic Inspector Integration, to discover tag for ironic-inspector run below command and use the generated tag for nuage-ironic-inspector-dockerfile when following step 8
+
+::
+
+    [stack@director ~]$ source ~/stackrc
+    (undercloud) [stack@director ~] openstack overcloud container image tag discover --image registry.access.redhat.com/rhosp13/openstack-ironic-inspector:latest --tag-from-label {version}-{release}
+    
+    13.0-61.1543534104
+
+
+8. For all the Docker files in the Nuage-OSPD-Dockerfiles directory, change the ``<tag>`` of the Docker base image to point to the same tag in ``/home/stack/templates/overcloud_images.yaml`` .
 
 ::
 
@@ -721,7 +771,7 @@ Phase 8: Build the Docker images.
     FROM registry.access.redhat.com/rhosp13/openstack-neutron-server:13.0-60.1543534138
 
 
-8. For all the Docker files in the Nuage-OSPD-Dockerfiles directory, provide the label that is being used on your setup.
+9. For all the Docker files in the Nuage-OSPD-Dockerfiles directory, provide the label that is being used on your setup.
 
 ::
 
@@ -730,16 +780,16 @@ Phase 8: Build the Docker images.
     LABEL name="192.168.24.1:8787/rhosp13/openstack-nuage-neutron-server"
 
 
-9. Set the baseurl in nuage.repo to point to the URL of the Nuage repository that hosts all of the required Nuage packages.
+10. Set the baseurl in nuage.repo to point to the URL of the Nuage repository that hosts all of the required Nuage packages.
 
 ::
 
     baseurl = <baseurl>
 
 
-10. For the AVRS integration, set the baseurl in nuage_6wind.repo to point to the URL of the Nuage repository that hosts all of the required 6wind and AVRS packages.
+11. For the AVRS integration, set the baseurl in nuage_6wind.repo to point to the URL of the Nuage repository that hosts all of the required 6wind and AVRS packages.
 
-11. Build the Nuage Docker images from Nuage-OSPD-Dockerfiles directory:
+12. Build the Nuage Docker images from Nuage-OSPD-Dockerfiles directory:
 
 ::
 
@@ -782,7 +832,14 @@ Phase 8: Build the Docker images.
     Example:
     docker build -t 192.168.24.1:8787/rhosp13/openstack-nuage-nova-compute-avrs:<tag> -f nova-compute-avrs-dockerfile .
 
-12. During the deployment, configure the Overcloud to use the Nuage container images instead of the Red Hat registry images by pushing the build Nuage container images to the local registry.
+    # For Nuage Ironic Inspector
+    docker build -t <undercloud-ip>:8787/rhosp13/openstack-nuage-ironic-inspector:<tag> -f nuage--ironic-inspector-dockerfile .
+
+    Example:
+    docker build -t 192.168.24.1:8787/rhosp13/openstack-nuage-ironic-inspector:<tag> -f nuage--ironic-inspector-dockerfile .
+
+
+13. During the deployment, configure the Overcloud to use the Nuage container images instead of the Red Hat registry images by pushing the build Nuage container images to the local registry.
 
 ::
 
@@ -793,14 +850,14 @@ Phase 8: Build the Docker images.
     docker push 192.168.24.1:8787/rhosp13/openstack-nuage-neutron-server:<tag>
 
 
-13. During the AVRS deployment, also configure the Overcloud to use the Nuage AVRS container images:
+14. During the AVRS deployment, also configure the Overcloud to use the Nuage AVRS container images:
 
 ::
 
     docker push 192.168.24.1:8787/rhosp13/openstack-nuage-nova-compute-avrs:<tag>
 
 
-14. Change the /home/stack/templates/overcloud_images.yaml file to point Heat, Horizon, Neutron, and their Docker configuration images to ones in the local registry:
+15. Change the /home/stack/templates/overcloud_images.yaml file to point Heat, Horizon, Neutron, and their Docker configuration images to ones in the local registry:
 
 ::
 
@@ -816,14 +873,22 @@ Phase 8: Build the Docker images.
     DockerNeutronConfigImage: 192.168.24.1:8787/rhosp13/openstack-nuage-neutron-server:<tag>
 
 
-15. For AVRS integration, change the /home/stack/templates/overcloud_images.yaml file and add the following parameters to point the AVRS Docker images to ones in the local registry:
+16. For AVRS integration, change the /home/stack/templates/overcloud_images.yaml file and add the following parameters to point the AVRS Docker images to ones in the local registry:
 
 ::
 
     DockerNovaComputeAvrsImage: 192.168.24.1:8787/rhosp13/openstack-nuage-nova-compute-avrs:<tag>
     DockerNovaLibvirtAvrsConfigImage: 192.168.24.1:8787/rhosp13/openstack-nuage-nova-compute-avrs:<tag>
 
-16. Create the ``docker-insecure-registry.yaml`` at ``/home/stack/templates/docker-insecure-registry.yaml``. See the sample in the "Sample Templates" section.
+17. For Ironic Inspector Integration, add the Nuage Ironic Inspector images to /home/stack/templates/overcloud_images.yaml as shown below:
+
+::
+
+    DockerIronicInspectorImage: 192.168.24.1:8787/rhosp13/openstack-nuage-ironic-inspector:<tag>
+    DockerIronicInspectorConfigImage: 192.168.24.1:8787/rhosp13/openstack-nuage-ironic-inspector:<tag>
+
+
+18. Create the ``docker-insecure-registry.yaml`` at ``/home/stack/templates/docker-insecure-registry.yaml``. See the sample in the "Sample Templates" section.
 
 Phase 9: Deploy the Overcloud.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -876,6 +941,30 @@ For AVRS, also include following role and environment files.
    openstack overcloud deploy --templates -r /home/stack/templates/sriov-role.yaml -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /home/stack/templates/node-info.yaml -e /home/stack/templates/neutron-sriov.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml --ntp-server ntp-server
 
 
+4. For a Linux-bonding HA deployment with Nuage, use the following:
+
+::
+
+    openstack overcloud deploy --templates -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-environment.yaml -e /home/stack/templates/node-info.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-isolation.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/net-bond-with-vlans.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml --ntp-server ntp-server
+
+    For AVRS integration, use the following:
+    openstack overcloud deploy --templates -r /home/stack/templates/avrs-role.yaml -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-environment.yaml -e /home/stack/templates/node-info.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-isolation.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/net-bond-with-vlans.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/avrs-environment.yaml --ntp-server ntp-server
+
+
+5.  For Ironic Integration (without Ironic Inspector) with Nuage, use:
+
+::
+
+    openstack overcloud deploy --templates -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/node-info.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/services-docker/ironic.yaml -e /home/stack/templates/ironic.yaml --ntp-server ntp-server
+
+
+6. For Ironic Inspector Integration with Nuage, use:
+
+::
+
+    openstack overcloud deploy --templates -r /home/stack/templates/ironic-role.yaml -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/node-info.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/services/ironic.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/services/ironic-inspector.yaml -e /home/stack/templates/ironic.yaml -e /home/stack/templates/ironic-inspector.yaml --ntp-server ntp-server
+
+
 where:
    * ``neutron-nuage-config.yaml`` is Controller specific parameter values.
    * ``nova-nuage-config.yaml`` is Compute specific parameter values.
@@ -886,15 +975,10 @@ where:
    * ``net-bond-with-vlans.yaml`` Configures an IP address and a pair of bonded nics on each network
    * ``sriov-role.yaml`` Enables services required for Compute Sriov role
    * ``neutron-sriov.yaml`` Neutron SRIOV specific parameter values
+   * ``avrs-role.yaml`` Enables services required for Compute Avrs role
+   * ``ironic-role.yaml`` Enables Ironic Inspector service for Controller role
 
-4. For a Linux-bonding HA deployment with Nuage, use the following:
 
-::
-
-    openstack overcloud deploy --templates -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-environment.yaml -e /home/stack/templates/node-info.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-isolation.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/net-bond-with-vlans.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml --ntp-server ntp-server
-
-    For AVRS integration, use the following:
-    openstack overcloud deploy --templates -r /home/stack/templates/avrs-role.yaml -e /home/stack/templates/overcloud_images.yaml -e /home/stack/templates/docker-insecure-registry.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-environment.yaml -e /home/stack/templates/node-info.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/network-isolation.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/net-bond-with-vlans.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/neutron-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/nova-nuage-config.yaml -e /usr/share/openstack-tripleo-heat-templates/environments/avrs-environment.yaml --ntp-server ntp-server
 
 
 Phase 10: Verify that OpenStack director has been deployed successfully.
@@ -968,6 +1052,22 @@ Phase 11 (Optional) For SR-IOV, manually install and run the topology collector.
 See the detailed steps in `Installation and Configuration: Topology Collection Agent and LLDP <queens-40-using.html#installation-and-configuration-topology-collection-agent-and-lldp>`_ . 
 
 Also see the OpenStack SR-IOV documentation for more information.
+
+
+Phase 12 (Optional) For Ironic, manually post install steps
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For provisioning baremtal nodes, create all the resources in service project as ironic user.
+
+In /etc/puppet/hieradata/service_configs.yaml, ironic::keystone::auth::password param has the password for ironic user in service project.
+
+Prepare a new overcloudrc-service same as overcloudrc but set project as service, user as ironic and value of ironic::keystone::auth::password as password.
+
+Dhcp-server can be configured according to the deployment architecture.
+
+If dhcp-server for baremetal nodes is running on the controllers, then edit /etc/puppet/hieradata/service_configs.yaml and modify ironic::pxe::tftp_bind_host to next-server value set in /etc/dhcp/dhcpd on all the controllers. If there are more than one dhcp-server, then the DHCP servers should not have a single “shared” scope, but rather they should have a “split” scope of subnet.
+
+Then restart ironic_pxe_tftp container on controllers.
 
 
 Parameters in the Heat Templates
@@ -1139,6 +1239,61 @@ The following parameters are mapped to values in the /etc/default/nuage-metadata
 
     NuageNovaApiEndpoint
     Maps to NOVA_API_ENDPOINT_TYPE parameter. This needs to correspond to  the setting for the Nova API endpoint as configured by OSP Director
+
+
+Parameters Required for Ironic/Ironic-Inspector
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following parameters are mapped to values in the /etc/nova/nova.conf on the Controller:
+
+::
+
+    NovaSchedulerDiscoverHostsInCellsInterval
+    Maps to discover_hosts_in_cells_interval parameter.
+
+    NovaSchedulerDefaultFilters
+    Maps to scheduler_default_filters parameter.
+
+
+The following parameters are mapped to values in the /etc/ironic/ironic.conf on the Controller:
+
+::
+
+    IronicCleaningDiskErase
+    Maps to cleaning_disk_erase parameter.
+
+    IronicIPXEEnabled
+    Maps to ipxe_enabled parameter.
+
+    IronicDhcpProvider
+    Maps to dhcp_provider parameter.
+
+
+Parameters Required for Ironic-Inspector
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following parameter is mapped to value in the /etc/ironic-inspector/inspector.conf on the Controller:
+
+::
+
+    IronicInspectorExtraProcessingHooks
+    Maps to processing_hooks parameter.
+
+
+The following parameter is mapped to value in the /etc/ironic-inspector/dnsmasq.conf on the Controller:
+
+::
+
+    IronicInspectorIpRange
+    Maps to dhcp-range parameter.
+
+
+The following parameter is used to enable/disable ipxe on th Controller:
+
+::
+
+    IronicInspectorIPXEEnabled
+    Used to enable/disable ipxe
 
 
 Parameters Required for Docker
@@ -1371,6 +1526,40 @@ avrs-environment.yaml for AVRS integration
 
 
 
+ironic.yaml for Ironic/Ironic-Inspector Deployment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+::
+
+    parameter_defaults:
+      NovaSchedulerDiscoverHostsInCellsInterval: 15
+      NovaSchedulerDefaultFilters:
+          - RetryFilter
+          - AggregateInstanceExtraSpecsFilter
+          - AvailabilityZoneFilter
+          - RamFilter
+          - DiskFilter
+          - ComputeFilter
+          - ComputeCapabilitiesFilter
+          - ImagePropertiesFilter
+
+      IronicCleaningDiskErase: metadata
+      IronicIPXEEnabled: false
+      IronicDhcpProvider: 'neutron'
+
+
+ironic-inspector.yaml for Ironic-Inspector Deployment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+::
+
+    parameter_defaults:
+      IronicInspectorIPXEEnabled: false
+      #NOTE: IronicInspectorIpRange will not be used but we have to set it to dummy IP range
+      IronicInspectorIpRange: '10.0.0.3,10.0.0.30'
+      IronicInspectorExtraProcessingHooks: extra_hardware,lldp_basic,local_link_connection,nuage_lldp
+
+
 docker-insecure-registry.yaml for One Local Registry
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1517,3 +1706,15 @@ The workaround is to manually remove the instance_uuid reference:
 
     Example:
     ironic node-update 9e57d620-3ec5-4b5e-96b1-bf56cce43411 remove instance_uuid
+
+
+While deploying overcloud with Ironic service enabled
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If the following issue occurs:
+
+::
+    resources.ControllerServiceChain: Error in 102 output role_data: The Parameter (UpgradeRemoveUnusedPackages) was not provided
+
+The workaround is to apply this upstream `change https://review.openstack.org/#/c/617215/3/docker/services/nova-ironic.yaml`_ .
+The upstream bug id for this is `here https://bugzilla.redhat.com/show_bug.cgi?id=1648998`_ .

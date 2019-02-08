@@ -101,6 +101,7 @@ def main():
     (e1, v1, r1) = stringToVersion(constants.VERSION_1_CHECK)
     (e2, v2, r2) = stringToVersion(constants.VERSION_2_CHECK)
     (e3, v3, r3) = stringToVersion(constants.VERSION_3_CHECK)
+    (e4, v4, r4) = stringToVersion(constants.VERSION_4_CHECK)
 
     
 
@@ -108,6 +109,7 @@ def main():
     version_1_rc = version_compare((e0, v0, r0), (e1, v1, r1))
     version_2_rc = version_compare((e0, v0, r0), (e2, v2, r2))
     version_3_rc = version_compare((e0, v0, r0), (e3, v3, r3))
+    version_4_rc = version_compare((e0, v0, r0), (e4, v4, r4))
 
     if version_1_rc <= 0:
         diff_version = constants.VERSION_1_DIFF
@@ -118,7 +120,10 @@ def main():
     elif version_2_rc > 0 and version_3_rc <= 0:
         diff_version = constants.VERSION_3_DIFF
 
-    elif version_3_rc > 0:
+    elif version_3_rc > 0 and version_4_rc <= 0:
+        diff_version = constants.VERSION_4_DIFF
+
+    elif version_4_rc > 0:
         print "Not supported for %s" % version
         sys.exit(1)
 
